@@ -1,0 +1,290 @@
+---
+import '../../styles/global.css';
+
+type CloudflareWorkersModule = {
+  env: Env;
+};
+
+type MercadoPagoPayment = {
+  external_reference?: string;
+  id?: string | number;
+  payment_method_id?: string;
+  payment_type_id?: string;
+  status?: string;
+  status_detail?: string;
+  transaction_amount?: number;
+};
+
+type PaymentTransaction = {
+  amount: number | null;
+  copesaplan: string | null;
+  email: string | null;
+  external_reference: string | null;
+  mp_payment_id: string | null;
+  mp_preference_id: string | null;
+  nombre: string | null;
+  raw_payment_response: string | null;
+  rut: string | null;
+};
+
+const status = Astro.url.searchParams.get('status');
+const paymentId =
+  Astro.url.searchParams.get('payment_id') ?? Astro.url.searchParams.get('collection_id');
+const externalReference =
+  Astro.url.searchParams.get('external_reference') ?? Astro.url.searchParams.get('ref');
+const preferenceId = Astro.url.searchParams.get('preference_id');
+const merchantOrderId = Astro.url.searchParams.get('merchant_order_id');
+const paymentType = Astro.url.searchParams.get('payment_type');
+const queryParams = Array.from(Astro.url.searchParams.entries());
+let payment: MercadoPagoPayment | null = null;
+let transaction: PaymentTransaction | null = null;
+let dbLookupError: string | null = null;
+
+const titleByStatus: Record<string, string> = {
+  approved: 'Pago recibido',
+  failure: 'Pago no completado',
+  pending: 'Pago pendiente',
+  success: 'Pago recibido',
+};
+
+const messageByStatus: Record<string, string> = {
+  approved: 'Recibimos la confirmación inicial. El estado final quedará registrado por webhook.',
+  failure: 'No pudimos confirmar el pago. Puedes volver a intentar desde la landing.',
+  pending: 'Mercado Pago dejó el pago pendiente. Te avisaremos cuando cambie el estado.',
+  success: 'Recibimos la confirmación inicial. El estado final quedará registrado por webhook.',
+};
+
+const title = titleByStatus[status ?? ''] ?? 'Estado de pago';
+const message = messageByStatus[status ?? ''] ?? 'Consulta el estado de tu pago más tarde.';
+const queryParamsForDisplay = Object.fromEntries(queryParams);
+
+try {
+  const { env } = await getRuntime(Astro.locals);
+
+  if (env.DB) {
+    transaction = await findTransaction(env.DB, {
+      externalReference,
+      paymentId,
+      preferenceId,
+    });
+
+    if (env.MP_ACCESS_TOKEN && paymentId) {
+      try {
+        const paymentResponse = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+          headers: {
+            Authorization: `Bearer ${env.MP_ACCESS_TOKEN}`,
+          },
+        });
+
+        if (paymentResponse.ok) {
+          payment = (await paymentResponse.json()) as MercadoPagoPayment;
+        }
+      } catch (error) {
+        console.error('No fue posible consultar el detalle del pago', error);
+      }
+    }
+
+    const resolvedExternalReference = payment?.external_reference ?? externalReference;
+    const paymentIdCandidate = payment?.id ? String(payment.id) : paymentId;
+
+    if (!transaction && (resolvedExternalReference || paymentIdCandidate || preferenceId)) {
+      transaction = await findTransaction(env.DB, {
+        externalReference: resolvedExternalReference,
+        paymentId: paymentIdCandidate,
+        preferenceId,
+      });
+    }
+
+    const transactionPayment =
+      !payment && transaction?.raw_payment_response
+        ? (JSON.parse(transaction.raw_payment_response) as MercadoPagoPayment)
+        : null;
+    const paidAmount =
+      payment?.transaction_amount ??
+      transactionPayment?.transaction_amount ??
+      transaction?.amount ??
+      null;
+
+    await env.DB.prepare(
+      `
+        INSERT INTO pagos (
+          id,
+          source,
+          external_reference,
+          mp_payment_id,
+          mp_preference_id,
+          mp_merchant_order_id,
+          status,
+          status_detail,
+          payment_type,
+          payment_method_id,
+          transaction_amount,
+          query_params,
+          raw_payment_response,
+          created_at,
+          updated_at
+        )
+        VALUES (?, 'return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `,
+    )
+      .bind(
+        crypto.randomUUID(),
+        resolvedExternalReference,
+        paymentIdCandidate,
+        preferenceId,
+        merchantOrderId,
+        payment?.status ?? status,
+        payment?.status_detail ?? null,
+        payment?.payment_type_id ?? paymentType,
+        payment?.payment_method_id ?? null,
+        paidAmount,
+        JSON.stringify(queryParams),
+        payment ? JSON.stringify(payment) : null,
+      )
+      .run();
+  }
+} catch (error) {
+  dbLookupError = error instanceof Error ? error.message : 'error_desconocido';
+  console.error('No fue posible registrar el retorno de pago', error);
+}
+
+async function getRuntime(locals: App.Locals) {
+  if (import.meta.env.ASTRO_SANDBOX) {
+    return { env: locals.runtime?.env as Env };
+  }
+
+  const { env } = (await import('cloudflare:workers')) as CloudflareWorkersModule;
+  return { env };
+}
+
+async function findTransaction(
+  db: D1Database,
+  {
+    externalReference,
+    paymentId,
+    preferenceId,
+  }: {
+    externalReference: string | null | undefined;
+    paymentId: string | null | undefined;
+    preferenceId: string | null | undefined;
+  },
+) {
+  const transactionSelect = `
+    SELECT
+      amount,
+      copesaplan,
+      email,
+      external_reference,
+      mp_payment_id,
+      mp_preference_id,
+      nombre,
+      raw_payment_response,
+      rut
+    FROM mp_payment_transactions
+  `;
+
+  if (externalReference) {
+    const row = await db
+      .prepare(`${transactionSelect} WHERE external_reference = ? OR id = ? LIMIT 1`)
+      .bind(externalReference, externalReference)
+      .first<PaymentTransaction>();
+
+    if (row) {
+      return row;
+    }
+  }
+
+  if (preferenceId) {
+    const row = await db
+      .prepare(`${transactionSelect} WHERE mp_preference_id = ? LIMIT 1`)
+      .bind(preferenceId)
+      .first<PaymentTransaction>();
+
+    if (row) {
+      return row;
+    }
+  }
+
+  if (paymentId) {
+    return db
+      .prepare(`${transactionSelect} WHERE mp_payment_id = ? LIMIT 1`)
+      .bind(paymentId)
+      .first<PaymentTransaction>();
+  }
+
+  return null;
+}
+
+const currency = new Intl.NumberFormat('es-CL', {
+  currency: 'CLP',
+  maximumFractionDigits: 0,
+  style: 'currency',
+});
+const paidAmount = payment?.transaction_amount ?? transaction?.amount ?? null;
+const transactionPayment =
+  !payment && transaction?.raw_payment_response
+    ? (JSON.parse(transaction.raw_payment_response) as MercadoPagoPayment)
+    : null;
+const displayAmount =
+  payment?.transaction_amount ?? transactionPayment?.transaction_amount ?? transaction?.amount ?? null;
+const summary = {
+  amount: displayAmount,
+  amount_formatted: typeof displayAmount === 'number' ? currency.format(displayAmount) : null,
+  external_reference:
+    payment?.external_reference ?? transactionPayment?.external_reference ?? externalReference ?? transaction?.external_reference,
+  mp_payment_id: payment?.id ? String(payment.id) : transactionPayment?.id ? String(transactionPayment.id) : paymentId ?? transaction?.mp_payment_id,
+  mp_preference_id: preferenceId ?? transaction?.mp_preference_id,
+  payment_method_id: payment?.payment_method_id ?? transactionPayment?.payment_method_id ?? null,
+  payment_type: payment?.payment_type_id ?? transactionPayment?.payment_type_id ?? paymentType,
+  producto: transaction?.copesaplan ?? null,
+  rut: transaction?.rut ?? null,
+  status: payment?.status ?? transactionPayment?.status ?? status,
+  status_detail: payment?.status_detail ?? transactionPayment?.status_detail ?? null,
+  transaction_found: Boolean(transaction),
+  db_lookup_error: dbLookupError,
+};
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>{title}</title>
+  </head>
+  <body class="min-h-screen bg-slate-100 px-6 text-slate-900">
+    <main class="mx-auto grid min-h-screen w-full max-w-md place-items-center">
+      <section class="w-full rounded-lg border border-slate-200 bg-white p-7 shadow-xl shadow-slate-200/70">
+        <h1 class="text-2xl font-bold leading-tight">{title}</h1>
+        <p class="mt-6 text-sm text-slate-700">{message}</p>
+        {
+          typeof paidAmount === 'number' && (
+            <div class="mt-6 rounded-md border border-slate-200 bg-slate-50 p-4">
+              <p class="text-xs font-bold uppercase text-slate-500">Monto pagado</p>
+              <p class="mt-1 text-2xl font-bold text-slate-950">{currency.format(paidAmount)}</p>
+            </div>
+          )
+        }
+        <div class="mt-6 space-y-4">
+          <section>
+            <h2 class="text-sm font-bold text-slate-900">Resumen</h2>
+            <pre class="mt-2 max-h-64 overflow-auto rounded-md bg-slate-950 p-4 text-xs leading-relaxed text-slate-100">{JSON.stringify(summary, null, 2)}</pre>
+          </section>
+          <section>
+            <h2 class="text-sm font-bold text-slate-900">Datos de retorno</h2>
+            <pre class="mt-2 max-h-64 overflow-auto rounded-md bg-slate-950 p-4 text-xs leading-relaxed text-slate-100">{JSON.stringify(queryParamsForDisplay, null, 2)}</pre>
+          </section>
+          {
+            payment && (
+              <section>
+                <h2 class="text-sm font-bold text-slate-900">Detalle del pago</h2>
+                <pre class="mt-2 max-h-96 overflow-auto rounded-md bg-slate-950 p-4 text-xs leading-relaxed text-slate-100">{JSON.stringify(payment, null, 2)}</pre>
+              </section>
+            )
+          }
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

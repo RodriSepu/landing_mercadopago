@@ -1,0 +1,13 @@
+name = "landing-pago"
+compatibility_date = "2026-06-15"
+preview_urls = false
+workers_dev = true
+
+[vars]
+MP_FORCE_SANDBOX = "true"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cobranza"
+database_id = "0b83000d-41ba-4f94-a3e3-ee1912de9f5c"
+remote = true

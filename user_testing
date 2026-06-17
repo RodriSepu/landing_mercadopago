@@ -1,0 +1,22 @@
+Usuario de prueba para flujo de pago Mercado Pago
+
+Nombre: Rodrigo Sepulveda
+RUT: 15842003-1
+Contrato: 1212120
+Email: rodrigo.sepulveda@grupocopesa.cl
+Plan: Plan Impreso SD + Acceso Digital
+Deuda pendiente: 10
+Dias de mora: 30
+Estado documento: CO
+Status Copesa: ACTIVO
+Tabla D1: cobranza_efectiva
+Base D1: cobranza
+
+Consulta de validacion:
+SELECT
+  MAX(copesaplan) AS copesaplan,
+  MAX(nombre) AS nombre,
+  SUM(deuda_pendiente) AS monto
+FROM cobranza_efectiva
+WHERE rut_contratante = '15842003-1'
+  AND deuda_pendiente > 0;

@@ -1,0 +1,29 @@
+{
+  "name": "landing-pago",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "dev:sandbox": "ASTRO_SANDBOX=true astro dev --host 127.0.0.1 --port 4321",
+    "dev:remote": "wrangler dev --remote --port 4324",
+    "build": "astro build",
+    "build:sandbox": "ASTRO_SANDBOX=true astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "13.7.0",
+    "@astrojs/node": "10.1.4",
+    "@tailwindcss/postcss": "4.3.1",
+    "astro": "6.4.7",
+    "tailwindcss": "4.3.1"
+  },
+  "overrides": {
+    "vite": "^7"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.9",
+    "@cloudflare/workers-types": "^4.20260616.1",
+    "typescript": "^6.0.3"
+  }
+}
