@@ -23,10 +23,6 @@ export const GET: APIRoute = async ({ locals }) => {
   }
 
   try {
-    const version = await db
-      .prepare('SELECT sqlite_version() AS version')
-      .first<{ version: string }>();
-
     const table = await db
       .prepare(
         `
@@ -41,7 +37,6 @@ export const GET: APIRoute = async ({ locals }) => {
 
     return json({
       ok: true,
-      sqlite_version: version?.version ?? null,
       tables: table.results.map((row) => row.name),
     });
   } catch (error) {
