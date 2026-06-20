@@ -13,6 +13,16 @@ type DebtRow = {
   identificador_cliente: string | null;
 };
 
+type DebtItemRow = {
+  contrato: string | null;
+  copesaplan: string | null;
+  email: string | null;
+  fecha_docto: string | null;
+  fecha_vencimiento: string | null;
+  identificador_cliente: string | null;
+  monto: number | null;
+};
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -33,6 +43,33 @@ const normalizeRut = (rut: string) => {
   }
 
   return `${match[1]}-${match[2]}`;
+};
+
+const parseDateOnly = (value: string | null) => {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.includes('T') ? value : `${value}T00:00:00`;
+  const parsed = new Date(normalized);
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const diffInDays = (from: Date, to: Date) =>
+  Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+
+const getPayableDebtItems = (rows: DebtItemRow[]) => {
+  const today = new Date();
+
+  return rows.filter((row) => {
+    const compromiso = parseDateOnly(row.fecha_docto);
+    if (!compromiso) {
+      return false;
+    }
+
+    return diffInDays(compromiso, today) > 20;
+  });
 };
 
 export const prerender = false;
@@ -82,9 +119,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   let debt: DebtRow | null = null;
+  let debtItems: DebtItemRow[] = [];
 
   if (rut) {
-    debt = await env.DB.prepare(
+    const rows = await env.DB.prepare(
       `
         SELECT
           MAX(contrato) AS contrato,
@@ -100,8 +138,28 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )
       .bind(rut)
       .first<DebtRow>();
+
+    debt = rows;
+
+    debtItems = await env.DB.prepare(
+      `
+        SELECT
+          contrato,
+          email,
+          fecha_docto,
+          fecha_vencimiento,
+          identificador_cliente,
+          saldo_pendiente AS monto
+        FROM cgc_deudas_reales
+        WHERE identificador_cliente = ?
+          AND saldo_pendiente > 0
+      `,
+    )
+      .bind(rut)
+      .all<DebtItemRow>()
+      .then((result) => result.results);
   } else if (email) {
-    debt = await env.DB.prepare(
+    const rows = await env.DB.prepare(
       `
         SELECT
           MAX(contrato) AS contrato,
@@ -117,13 +175,37 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )
       .bind(email)
       .first<DebtRow>();
+
+    debt = rows;
+
+    debtItems = await env.DB.prepare(
+      `
+        SELECT
+          contrato,
+          email,
+          fecha_docto,
+          fecha_vencimiento,
+          identificador_cliente,
+          saldo_pendiente AS monto
+        FROM cgc_deudas_reales
+        WHERE LOWER(email) = ?
+          AND saldo_pendiente > 0
+      `,
+    )
+      .bind(email)
+      .all<DebtItemRow>()
+      .then((result) => result.results);
   }
 
-  if (!debt?.nombre || !debt.monto) {
+  const payableDebtItems = getPayableDebtItems(debtItems);
+  const amount = Math.round(
+    payableDebtItems.reduce((sum, item) => sum + Number(item.monto ?? 0), 0),
+  );
+
+  if (!debt?.nombre || !amount) {
     return json({ error: 'deuda_no_encontrada', status: 404 }, 404);
   }
 
-  const amount = Math.round(Number(debt.monto));
   const externalReference = crypto.randomUUID();
   const origin = new URL(request.url).origin;
   const notificationUrl = `${origin}/api/mercadopago/webhook`;
