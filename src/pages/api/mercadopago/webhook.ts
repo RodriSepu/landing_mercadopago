@@ -143,12 +143,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
       .first<{ contrato: string | null; amount: number | null }>();
 
     if (tx?.contrato) {
-      // NOTA: Se comenta temporalmente esta actualización de deuda_pendiente para permitir pruebas consecutivas sin "eliminar" al deudor.
+      // NOTA: Se deja comentada esta actualización para no descontar saldo_pendiente durante pruebas.
       /*
       await env.DB.prepare(
         `
-          UPDATE cobranza_efectiva
-          SET deuda_pendiente = MAX(0, deuda_pendiente - ?),
+          UPDATE cgc_deudas_reales
+          SET saldo_pendiente = MAX(0, saldo_pendiente - ?),
               updated_at = datetime('now')
           WHERE contrato = ?
         `,

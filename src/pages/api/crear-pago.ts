@@ -10,7 +10,7 @@ type DebtRow = {
   email: string | null;
   monto: number | null;
   nombre: string | null;
-  rut_contratante: string | null;
+  identificador_cliente: string | null;
 };
 
 const json = (body: unknown, status = 200) =>
@@ -87,15 +87,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
     debt = await env.DB.prepare(
       `
         SELECT
-          MAX(rut_contratante) AS rut_contratante,
           MAX(contrato) AS contrato,
-          MAX(copesaplan) AS copesaplan,
-          MAX(nombre) AS nombre,
+          MAX(contrato) AS copesaplan,
+          MAX(nombre_cliente) AS nombre,
           MAX(email) AS email,
-          SUM(deuda_pendiente) AS monto
-        FROM cobranza_efectiva
-        WHERE rut_contratante = ?
-          AND deuda_pendiente > 0
+          MAX(identificador_cliente) AS identificador_cliente,
+          SUM(saldo_pendiente) AS monto
+        FROM cgc_deudas_reales
+        WHERE identificador_cliente = ?
+          AND saldo_pendiente > 0
       `,
     )
       .bind(rut)
@@ -104,15 +104,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
     debt = await env.DB.prepare(
       `
         SELECT
-          MAX(rut_contratante) AS rut_contratante,
           MAX(contrato) AS contrato,
-          MAX(copesaplan) AS copesaplan,
-          MAX(nombre) AS nombre,
+          MAX(contrato) AS copesaplan,
+          MAX(nombre_cliente) AS nombre,
           MAX(email) AS email,
-          SUM(deuda_pendiente) AS monto
-        FROM cobranza_efectiva
+          MAX(identificador_cliente) AS identificador_cliente,
+          SUM(saldo_pendiente) AS monto
+        FROM cgc_deudas_reales
         WHERE LOWER(email) = ?
-          AND deuda_pendiente > 0
+          AND saldo_pendiente > 0
       `,
     )
       .bind(email)
@@ -146,8 +146,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
     : [
         {
           currency_id: 'CLP',
-          description: `Pago de deuda RUT ${debt.rut_contratante ?? rut ?? ''} - ${productName}`,
-          id: debt.contrato ?? debt.rut_contratante ?? rut ?? '',
+          description: `Pago de deuda RUT ${debt.identificador_cliente ?? rut ?? ''} - ${productName}`,
+          id: debt.contrato ?? debt.identificador_cliente ?? rut ?? '',
           quantity: 1,
           title: productName,
           unit_price: amount,
@@ -174,7 +174,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   )
     .bind(
       externalReference,
-      debt.rut_contratante ?? rut,
+      debt.identificador_cliente ?? rut,
       debt.contrato,
       debt.copesaplan,
       debt.nombre,
@@ -196,7 +196,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     metadata: {
       contrato: debt.contrato,
       copesaplan: debt.copesaplan,
-      rut: debt.rut_contratante ?? rut,
+      rut: debt.identificador_cliente ?? rut,
     },
     notification_url: notificationUrl,
     ...(payerEmail || debt.nombre

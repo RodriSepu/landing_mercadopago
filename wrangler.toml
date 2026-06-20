@@ -8,6 +8,6 @@ MP_FORCE_SANDBOX = "true"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "cobranza"
-database_id = "0b83000d-41ba-4f94-a3e3-ee1912de9f5c"
+database_name = "c_order_adempiere"
+database_id = "68f6eeac-7fbc-4b81-a5ab-da61c2604343"
 remote = true

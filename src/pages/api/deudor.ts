@@ -6,6 +6,17 @@ type DeudorRow = {
   monto: number | null;
 };
 
+type DeudorItem = {
+  c_invoice_id: number;
+  monto: number;
+  fecha_docto: string | null;
+  fecha_vencimiento: string | null;
+};
+
+type DeudorResponseItem = DeudorItem & {
+  dias_desde_compromiso: number | null;
+};
+
 type CloudflareWorkersModule = {
   env: Env;
 };
@@ -23,7 +34,7 @@ const cleanRut = (rut: string) => rut.replace(/[.\s]/g, '').toUpperCase();
 
 const normalizeRut = (rut: string) => {
   const cleaned = cleanRut(rut);
-  const match = cleaned.match(/^(\d{7,8})-?([\dK])$/);
+  const match = cleaned.match(/^(\d{7,9})-?([\dK])$/);
 
   if (!match) {
     return null;
@@ -53,6 +64,57 @@ const isValidRut = (rut: string) => {
     expectedValue === 11 ? '0' : expectedValue === 10 ? 'K' : String(expectedValue);
 
   return expectedDigit === checkDigit;
+};
+
+const parseDateOnly = (value: string | null) => {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.includes('T') ? value : `${value}T00:00:00`;
+  const parsed = new Date(normalized);
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const diffInDays = (from: Date, to: Date) =>
+  Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+
+const filterItems = (rows: Array<{
+  contrato: string | null;
+  nombre_cliente: string | null;
+  saldo_pendiente: number | null;
+  fecha_docto: string | null;
+  fecha_vencimiento: string | null;
+  c_invoice_id: number;
+}>) => {
+  const today = new Date();
+  const cobrables: DeudorResponseItem[] = [];
+  const gestion: DeudorResponseItem[] = [];
+
+  for (const row of rows) {
+    const compromiso = parseDateOnly(row.fecha_docto);
+    const diasDesdeCompromiso =
+      compromiso ? diffInDays(compromiso, today) : null;
+    const item = {
+      c_invoice_id: row.c_invoice_id,
+      fecha_docto: row.fecha_docto,
+      fecha_vencimiento: row.fecha_vencimiento,
+      monto: Math.round(Number(row.saldo_pendiente ?? 0)),
+      dias_desde_compromiso: diasDesdeCompromiso,
+    };
+
+    if (diasDesdeCompromiso !== null && diasDesdeCompromiso > 20) {
+      cobrables.push(item);
+    } else {
+      gestion.push(item);
+    }
+  }
+
+  return {
+    cobrables,
+    gestion,
+  };
 };
 
 export const prerender = false;
@@ -96,49 +158,95 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   let result: DeudorRow | null = null;
+  let items: DeudorResponseItem[] = [];
+  let gestionItems: DeudorResponseItem[] = [];
 
   try {
     if (rut) {
-      result = await db
+      const rows = await db
         .prepare(
           `
-            SELECT
-              MAX(copesaplan) AS copesaplan,
-              MAX(nombre) AS nombre,
-              SUM(deuda_pendiente) AS monto
-            FROM cobranza_efectiva
-            WHERE rut_contratante = ?
-              AND deuda_pendiente > 0
+          SELECT
+              contrato,
+              nombre_cliente,
+              saldo_pendiente,
+              fecha_docto,
+              fecha_vencimiento,
+              c_invoice_id
+            FROM cgc_deudas_reales
+            WHERE identificador_cliente = ?
+              AND saldo_pendiente > 0
+            ORDER BY fecha_docto DESC, c_invoice_id DESC
           `,
         )
         .bind(rut)
-        .first<DeudorRow>();
+        .all<{
+          contrato: string | null;
+          nombre_cliente: string | null;
+          saldo_pendiente: number | null;
+          fecha_docto: string | null;
+          fecha_vencimiento: string | null;
+          c_invoice_id: number;
+        }>();
+
+      const filtered = filterItems(rows.results);
+      items = filtered.cobrables;
+      gestionItems = filtered.gestion;
+
+      result = {
+        copesaplan: rows.results[0]?.contrato ?? null,
+        nombre: rows.results[0]?.nombre_cliente ?? null,
+        monto: items.reduce((sum, item) => sum + item.monto, 0),
+      };
     } else if (email) {
-      result = await db
+      const rows = await db
         .prepare(
           `
-            SELECT
-              MAX(copesaplan) AS copesaplan,
-              MAX(nombre) AS nombre,
-              SUM(deuda_pendiente) AS monto
-            FROM cobranza_efectiva
+          SELECT
+              contrato,
+              nombre_cliente,
+              saldo_pendiente,
+              fecha_docto,
+              fecha_vencimiento,
+              c_invoice_id
+            FROM cgc_deudas_reales
             WHERE LOWER(email) = ?
-              AND deuda_pendiente > 0
+              AND saldo_pendiente > 0
+            ORDER BY fecha_docto DESC, c_invoice_id DESC
           `,
         )
         .bind(email)
-        .first<DeudorRow>();
+        .all<{
+          contrato: string | null;
+          nombre_cliente: string | null;
+          saldo_pendiente: number | null;
+          fecha_docto: string | null;
+          fecha_vencimiento: string | null;
+          c_invoice_id: number;
+        }>();
+
+      const filtered = filterItems(rows.results);
+      items = filtered.cobrables;
+      gestionItems = filtered.gestion;
+
+      result = {
+        copesaplan: rows.results[0]?.contrato ?? null,
+        nombre: rows.results[0]?.nombre_cliente ?? null,
+        monto: items.reduce((sum, item) => sum + item.monto, 0),
+      };
     }
   } catch {
     return json({ error: 'db_error' }, 503);
   }
 
-  if (!result?.nombre || !result.monto) {
+  if (!result?.nombre || (!result.monto && gestionItems.length === 0) || (items.length === 0 && gestionItems.length === 0)) {
     return json({ found: false });
   }
 
   return json({
     copesaplan: result.copesaplan,
+    items,
+    gestion_items: gestionItems,
     found: true,
     nombre: result.nombre,
     monto: Math.round(Number(result.monto)),
