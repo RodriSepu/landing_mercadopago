@@ -17,7 +17,9 @@ type MercadoPagoPayment = {
 
 type PaymentTransaction = {
   amount: number | null;
+  c_invoice_id: string | null;
   copesaplan: string | null;
+  docto_adempiere: string | null;
   email: string | null;
   external_reference: string | null;
   mp_payment_id: string | null;
@@ -114,6 +116,8 @@ try {
           mp_payment_id,
           mp_preference_id,
           mp_merchant_order_id,
+          c_invoice_id,
+          docto_adempiere,
           status,
           status_detail,
           payment_type,
@@ -133,6 +137,8 @@ try {
         paymentIdCandidate,
         preferenceId,
         merchantOrderId,
+        transaction?.c_invoice_id ?? null,
+        transaction?.docto_adempiere ?? null,
         payment?.status ?? status,
         payment?.status_detail ?? null,
         payment?.payment_type_id ?? paymentType,
@@ -150,7 +156,7 @@ try {
 
 async function getRuntime(locals: App.Locals) {
   if (import.meta.env.ASTRO_SANDBOX) {
-    return { env: locals.runtime?.env as Env };
+    return { env: (locals.runtime?.env ?? process.env) as unknown as Env };
   }
 
   const { env } = (await import('cloudflare:workers')) as CloudflareWorkersModule;
@@ -172,7 +178,9 @@ async function findTransaction(
   const transactionSelect = `
     SELECT
       amount,
+      c_invoice_id,
       copesaplan,
+      docto_adempiere,
       email,
       external_reference,
       mp_payment_id,
@@ -237,6 +245,8 @@ const summary = {
   payment_method_id: payment?.payment_method_id ?? transactionPayment?.payment_method_id ?? null,
   payment_type: payment?.payment_type_id ?? transactionPayment?.payment_type_id ?? paymentType,
   producto: transaction?.copesaplan ?? null,
+  c_invoice_id: transaction?.c_invoice_id ?? null,
+  docto_adempiere: transaction?.docto_adempiere ?? null,
   rut: transaction?.rut ?? null,
   status: payment?.status ?? transactionPayment?.status ?? status,
   status_detail: payment?.status_detail ?? transactionPayment?.status_detail ?? null,

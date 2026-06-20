@@ -266,7 +266,7 @@ import "../styles/global.css";
               class="relative mt-5 hidden rounded-xl border border-[#e5e7eb] bg-[#f8f9fa] p-5"
             >
               <div
-                class="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#f3c7c1] bg-white px-6 py-1.5 text-center shadow-sm sm:px-10 sm:py-2"
+                class="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#f3c7c1] bg-[#ffdad6] px-6 py-1.5 text-center shadow-sm sm:px-10 sm:py-2"
               >
                 <h4
                   class="whitespace-nowrap font-[Manrope] text-[10px] font-extrabold uppercase tracking-[0.06em] text-[#93000a] sm:text-[1.1rem] sm:tracking-[0.08em]"
@@ -877,6 +877,7 @@ import "../styles/global.css";
               const overdueItems = data.items ?? [];
               const gestionItems = data.gestion_items ?? [];
               const hasPayableItems = overdueItems.length > 0;
+              const payableItem = overdueItems[0] ?? null;
 
               setFlowStep(2);
 
@@ -1044,7 +1045,6 @@ import "../styles/global.css";
                   }
 
                   row.appendChild(status);
-                  row.appendChild(status);
                   debtBreakdown.appendChild(row);
                 }
 
@@ -1078,6 +1078,14 @@ import "../styles/global.css";
               if (payButton instanceof HTMLButtonElement) {
                 payButton.hidden = !hasPayableItems;
                 payButton.classList.toggle("hidden", !hasPayableItems);
+              }
+              if (payButton instanceof HTMLButtonElement) {
+                payButton.dataset.cInvoiceId = payableItem
+                  ? String(payableItem.c_invoice_id)
+                  : "";
+                payButton.dataset.doctoAdempiere = payableItem
+                  ? String(payableItem.fecha_docto ?? "")
+                  : "";
               }
               if (reviewButton instanceof HTMLButtonElement) {
                 reviewButton.hidden = true;
@@ -1114,13 +1122,20 @@ import "../styles/global.css";
               ? { rut: payableRut }
               : { email: payableEmail };
 
+            const cInvoiceId = payButton.dataset.cInvoiceId || undefined;
+            const doctoAdempiere = payButton.dataset.doctoAdempiere || undefined;
+
             try {
               const response = await fetch("/api/crear-pago", {
                 method: "POST",
                 headers: {
                   "content-type": "application/json",
                 },
-                body: JSON.stringify(requestBody),
+                body: JSON.stringify({
+                  ...requestBody,
+                  c_invoice_id: cInvoiceId,
+                  docto_adempiere: doctoAdempiere,
+                }),
               });
               const data = (await response.json()) as {
                 init_point?: string;

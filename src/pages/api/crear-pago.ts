@@ -5,8 +5,10 @@ type CloudflareWorkersModule = {
 };
 
 type DebtRow = {
+  c_invoice_id: string | null;
   contrato: string | null;
   copesaplan: string | null;
+  docto_adempiere: string | null;
   email: string | null;
   monto: number | null;
   nombre: string | null;
@@ -91,7 +93,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return json({ error: 'mercado_pago_no_configurado', status: 503 }, 503);
   }
 
-  let payload: { rut?: unknown; email?: unknown };
+  let payload: { rut?: unknown; email?: unknown; c_invoice_id?: unknown; docto_adempiere?: unknown };
 
   try {
     payload = await request.json();
@@ -101,6 +103,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   let rut: string | null = null;
   let email: string | null = null;
+  let cInvoiceId: string | null = null;
+  let doctoAdempiere: string | null = null;
 
   if ('rut' in payload && typeof payload.rut === 'string') {
     const normalized = normalizeRut(payload.rut);
@@ -118,6 +122,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return json({ error: 'datos_insuficientes', status: 400 }, 400);
   }
 
+  if ('c_invoice_id' in payload && typeof payload.c_invoice_id === 'string') {
+    cInvoiceId = payload.c_invoice_id.trim() || null;
+  }
+
+  if ('docto_adempiere' in payload && typeof payload.docto_adempiere === 'string') {
+    doctoAdempiere = payload.docto_adempiere.trim() || null;
+  }
+
   let debt: DebtRow | null = null;
   let debtItems: DebtItemRow[] = [];
 
@@ -125,8 +137,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const rows = await env.DB.prepare(
       `
         SELECT
+          MAX(c_invoice_id) AS c_invoice_id,
           MAX(contrato) AS contrato,
           MAX(contrato) AS copesaplan,
+          MAX(fecha_docto) AS docto_adempiere,
           MAX(nombre_cliente) AS nombre,
           MAX(email) AS email,
           MAX(identificador_cliente) AS identificador_cliente,
@@ -162,8 +176,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const rows = await env.DB.prepare(
       `
         SELECT
+          MAX(c_invoice_id) AS c_invoice_id,
           MAX(contrato) AS contrato,
           MAX(contrato) AS copesaplan,
+          MAX(fecha_docto) AS docto_adempiere,
           MAX(nombre_cliente) AS nombre,
           MAX(email) AS email,
           MAX(identificador_cliente) AS identificador_cliente,
@@ -245,6 +261,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
         copesaplan,
         nombre,
         email,
+        c_invoice_id,
+        docto_adempiere,
         amount,
         status,
         external_reference,
@@ -261,6 +279,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
       debt.copesaplan,
       debt.nombre,
       debt.email,
+      cInvoiceId,
+      doctoAdempiere,
       amount,
       externalReference,
     )
@@ -278,6 +298,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
     metadata: {
       contrato: debt.contrato,
       copesaplan: debt.copesaplan,
+      c_invoice_id: cInvoiceId,
+      docto_adempiere: doctoAdempiere,
       rut: debt.identificador_cliente ?? rut,
     },
     notification_url: notificationUrl,
@@ -371,7 +393,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 const getRuntime = async (locals: App.Locals) => {
   if (import.meta.env.ASTRO_SANDBOX) {
-    return { env: locals.runtime?.env as Env };
+    return { env: (locals.runtime?.env ?? process.env) as unknown as Env };
   }
 
   const { env } = (await import('cloudflare:workers')) as CloudflareWorkersModule;

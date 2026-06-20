@@ -53,7 +53,7 @@ export const GET: APIRoute = async ({ locals }) => {
 
 const getDatabase = async (locals: App.Locals) => {
   if (import.meta.env.ASTRO_SANDBOX) {
-    return locals.runtime?.env?.DB;
+    return (locals.runtime?.env ?? process.env).DB as D1Database | undefined;
   }
 
   try {

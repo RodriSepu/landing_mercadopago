@@ -169,6 +169,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
         status,
         status_detail,
         payment_method_id,
+        c_invoice_id,
+        docto_adempiere,
         raw_payment_response,
         raw_webhook_payload,
         created_at,
@@ -184,6 +186,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
       payment.status ?? 'unknown',
       payment.status_detail ?? null,
       'payment_method_id' in payment ? String(payment.payment_method_id ?? '') : null,
+      null,
+      null,
       JSON.stringify(payment),
       rawBody,
     )
@@ -237,7 +241,7 @@ const validateSignature = async ({
 
 const getRuntime = async (locals: App.Locals) => {
   if (import.meta.env.ASTRO_SANDBOX) {
-    return { env: locals.runtime?.env as Env };
+    return { env: (locals.runtime?.env ?? process.env) as unknown as Env };
   }
 
   const { env } = (await import('cloudflare:workers')) as CloudflareWorkersModule;
