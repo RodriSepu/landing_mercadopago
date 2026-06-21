@@ -250,42 +250,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
           },
         ];
 
-    try {
-      await env.DB.prepare(
-        `
-          INSERT INTO mp_payment_transactions (
-            id,
-            rut,
-          contrato,
-          copesaplan,
-          regla_de_pago,
-          nombre,
-          email,
-          amount,
-          status,
-            external_reference,
-            created_at,
-            updated_at
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'preference_creating', ?, datetime('now'), datetime('now'))
-        `,
-      )
-        .bind(
-          externalReference,
-          debt.identificador_cliente ?? rut,
-          debt.contrato,
-          null,
-          null,
-          debt.nombre,
-          debt.email,
-          amount,
-          externalReference,
-        )
-        .run();
-    } catch (error) {
-      console.error('mp_payment_transactions_insert_failed', error);
-    }
-
     const preferenceBody = {
       auto_return: 'approved',
       back_urls: {
@@ -313,6 +277,45 @@ export const POST: APIRoute = async ({ request, locals }) => {
           }
         : {}),
     };
+
+    try {
+      await env.DB.prepare(
+        `
+          INSERT INTO mp_payment_transactions (
+            id,
+            rut,
+            contrato,
+            copesaplan,
+            regla_de_pago,
+            nombre,
+            email,
+            amount,
+            currency,
+            status,
+            external_reference,
+            created_at,
+            updated_at,
+            raw_preference_response
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CLP', 'preference_creating', ?, datetime('now'), datetime('now'), ?)
+        `,
+      )
+        .bind(
+          externalReference,
+          debt.identificador_cliente ?? rut,
+          debt.contrato,
+          null,
+          null,
+          debt.nombre,
+          debt.email,
+          amount,
+          externalReference,
+          JSON.stringify(preferenceBody),
+        )
+        .run();
+    } catch (error) {
+      console.error('mp_payment_transactions_insert_failed', error);
+    }
 
     let mpResponse: Response;
 
@@ -398,9 +401,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 const getRuntime = async (locals: App.Locals) => {
   if (import.meta.env.ASTRO_SANDBOX) {
-    return { env: (locals.runtime?.env ?? process.env) as unknown as Env };
+    return { env: (locals.runtime?.env ?? (globalThis as any).process?.env) as unknown as Env };
   }
 
-  const { env } = (await import('cloudflare:workers')) as CloudflareWorkersModule;
+  const { env } = (await import(/* @vite-ignore */ 'cloudflare:workers')) as CloudflareWorkersModule;
   return { env };
 };

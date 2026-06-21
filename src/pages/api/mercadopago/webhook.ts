@@ -251,6 +251,6 @@ const getRuntime = async (locals: App.Locals) => {
     return { env: (locals.runtime?.env ?? (globalThis as any).process?.env) as unknown as Env };
   }
 
-  const { env } = (await import('cloudflare:workers')) as CloudflareWorkersModule;
+  const { env } = (await import(/* @vite-ignore */ 'cloudflare:workers')) as CloudflareWorkersModule;
   return { env };
 };

@@ -172,10 +172,10 @@ try {
 
 async function getRuntime(locals: App.Locals) {
   if (import.meta.env.ASTRO_SANDBOX) {
-    return { env: (locals.runtime?.env ?? process.env) as unknown as Env };
+    return { env: (locals.runtime?.env ?? (globalThis as any).process?.env) as unknown as Env };
   }
 
-  const { env } = (await import('cloudflare:workers')) as CloudflareWorkersModule;
+  const { env } = (await import(/* @vite-ignore */ 'cloudflare:workers')) as CloudflareWorkersModule;
   return { env };
 }
 
@@ -261,6 +261,16 @@ function extractInvoiceId(transaction: PaymentTransaction | null) {
   }
 }
 
+function extractInvoiceIdFromPayment(payment: MercadoPagoPayment | null) {
+  if (!payment) {
+    return null;
+  }
+
+  const metadata = (payment as MercadoPagoPayment & { metadata?: { c_invoice_id?: unknown } }).metadata;
+  const value = metadata?.c_invoice_id;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 const currency = new Intl.NumberFormat('es-CL', {
   currency: 'CLP',
   maximumFractionDigits: 0,
@@ -291,7 +301,7 @@ const summary = {
   transaction_found: Boolean(transaction),
   db_lookup_error: dbLookupError,
 };
-summary.c_invoice_id = extractInvoiceId(transaction);
+summary.c_invoice_id = extractInvoiceId(transaction) ?? extractInvoiceIdFromPayment(payment);
 ---
 
 <!doctype html>
