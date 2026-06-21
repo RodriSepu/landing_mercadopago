@@ -25,6 +25,7 @@ type PaymentTransaction = {
   mp_payment_id: string | null;
   mp_preference_id: string | null;
   nombre: string | null;
+  raw_preference_response: string | null;
   raw_payment_response: string | null;
   rut: string | null;
 };
@@ -109,26 +110,42 @@ try {
 
     await env.DB.prepare(
       `
-        INSERT INTO pagos (
-          id,
-          source,
-          external_reference,
-          mp_payment_id,
-          mp_preference_id,
-          mp_merchant_order_id,
-          c_invoice_id,
-          docto_adempiere,
-          status,
-          status_detail,
-          payment_type,
-          payment_method_id,
-          transaction_amount,
-          query_params,
-          raw_payment_response,
-          created_at,
-          updated_at
+      INSERT INTO pagos (
+        id,
+        source,
+        external_reference,
+        mp_payment_id,
+        mp_preference_id,
+        mp_merchant_order_id,
+        status,
+        status_detail,
+        payment_type,
+        payment_method_id,
+        transaction_amount,
+        query_params,
+        raw_payment_response,
+        raw_webhook_payload,
+        created_at,
+        updated_at
+      )
+        VALUES (
+          ?,
+          'return',
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          datetime('now'),
+          datetime('now')
         )
-        VALUES (?, 'return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `,
     )
       .bind(
@@ -137,14 +154,13 @@ try {
         paymentIdCandidate,
         preferenceId,
         merchantOrderId,
-        transaction?.c_invoice_id ?? null,
-        transaction?.docto_adempiere ?? null,
         payment?.status ?? status,
         payment?.status_detail ?? null,
         payment?.payment_type_id ?? paymentType,
         payment?.payment_method_id ?? null,
         paidAmount,
         JSON.stringify(queryParams),
+        payment ? JSON.stringify(payment) : null,
         payment ? JSON.stringify(payment) : null,
       )
       .run();
@@ -178,14 +194,13 @@ async function findTransaction(
   const transactionSelect = `
     SELECT
       amount,
-      c_invoice_id,
       copesaplan,
-      docto_adempiere,
       email,
       external_reference,
       mp_payment_id,
       mp_preference_id,
       nombre,
+      raw_preference_response,
       raw_payment_response,
       rut
     FROM mp_payment_transactions
@@ -223,6 +238,29 @@ async function findTransaction(
   return null;
 }
 
+function extractInvoiceId(transaction: PaymentTransaction | null) {
+  if (!transaction) {
+    return null;
+  }
+
+  if (transaction.c_invoice_id) {
+    return transaction.c_invoice_id;
+  }
+
+  const source = transaction.raw_preference_response ?? transaction.raw_payment_response ?? null;
+  if (!source) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(source) as { metadata?: { c_invoice_id?: unknown } };
+    const value = parsed.metadata?.c_invoice_id;
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 const currency = new Intl.NumberFormat('es-CL', {
   currency: 'CLP',
   maximumFractionDigits: 0,
@@ -253,6 +291,7 @@ const summary = {
   transaction_found: Boolean(transaction),
   db_lookup_error: dbLookupError,
 };
+summary.c_invoice_id = extractInvoiceId(transaction);
 ---
 
 <!doctype html>
@@ -273,6 +312,14 @@ const summary = {
             <div class="mt-6 rounded-md border border-slate-200 bg-slate-50 p-4">
               <p class="text-xs font-bold uppercase text-slate-500">Monto pagado</p>
               <p class="mt-1 text-2xl font-bold text-slate-950">{currency.format(paidAmount)}</p>
+            </div>
+          )
+        }
+        {
+          summary.c_invoice_id && (
+            <div class="mt-4 rounded-md border border-slate-200 bg-white p-4">
+              <p class="text-xs font-bold uppercase text-slate-500">Número de documento</p>
+              <p class="mt-1 text-lg font-semibold text-slate-950">{summary.c_invoice_id}</p>
             </div>
           )
         }
