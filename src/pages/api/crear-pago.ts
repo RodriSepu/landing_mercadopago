@@ -286,18 +286,18 @@ export const POST: APIRoute = async ({ request, locals }) => {
             rut,
             contrato,
             copesaplan,
-            regla_de_pago,
             nombre,
             email,
             amount,
-            currency,
             status,
             external_reference,
             created_at,
             updated_at,
-            raw_preference_response
+            raw_preference_response,
+            c_invoice_id,
+            docto_adempiere
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CLP', 'preference_creating', ?, datetime('now'), datetime('now'), ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'preference_creating', ?, datetime('now'), datetime('now'), ?, ?, ?)
         `,
       )
         .bind(
@@ -305,12 +305,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
           debt.identificador_cliente ?? rut,
           debt.contrato,
           null,
-          null,
           debt.nombre,
           debt.email,
           amount,
           externalReference,
           JSON.stringify(preferenceBody),
+          documentLabel,
+          documentLabel,
         )
         .run();
     } catch (error) {
