@@ -14,4 +14,14 @@ export default defineConfig({
         inspectorPort: false,
         remoteBindings: true,
       }),
+  vite: {
+    ssr: {
+      external: ['cloudflare:workers'],
+    },
+    build: {
+      rollupOptions: {
+        external: ['cloudflare:workers'],
+      },
+    },
+  },
 });

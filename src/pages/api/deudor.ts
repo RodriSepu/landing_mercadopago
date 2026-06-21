@@ -255,11 +255,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 const getDatabase = async (locals: App.Locals) => {
   if (import.meta.env.ASTRO_SANDBOX) {
-    return (locals.runtime?.env ?? process.env).DB as D1Database | undefined;
+    return (locals.runtime?.env ?? (globalThis as any).process?.env).DB as D1Database | undefined;
   }
 
   try {
-    const { env } = (await import('cloudflare:workers')) as CloudflareWorkersModule;
+    const { env } = (await import(/* @vite-ignore */ 'cloudflare:workers')) as CloudflareWorkersModule;
     return env.DB;
   } catch {
     return locals.runtime?.env?.DB;
