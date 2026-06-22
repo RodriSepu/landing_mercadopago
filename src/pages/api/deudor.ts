@@ -7,7 +7,8 @@ type DeudorRow = {
 };
 
 type DeudorItem = {
-  c_invoice_id: number;
+  contrato: string | null;
+  docto_adempiere: string | null;
   monto: number;
   fecha_docto: string | null;
   fecha_vencimiento: string | null;
@@ -86,7 +87,7 @@ const filterItems = (rows: Array<{
   saldo_pendiente: number | null;
   fecha_docto: string | null;
   fecha_vencimiento: string | null;
-  c_invoice_id: number;
+  docto_adempiere: string | null;
 }>) => {
   const today = new Date();
   const cobrables: DeudorResponseItem[] = [];
@@ -97,7 +98,8 @@ const filterItems = (rows: Array<{
     const diasDesdeCompromiso =
       compromiso ? diffInDays(compromiso, today) : null;
     const item = {
-      c_invoice_id: row.c_invoice_id,
+      contrato: row.contrato,
+      docto_adempiere: row.docto_adempiere,
       fecha_docto: row.fecha_docto,
       fecha_vencimiento: row.fecha_vencimiento,
       monto: Math.round(Number(row.saldo_pendiente ?? 0)),
@@ -172,11 +174,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
               saldo_pendiente,
               fecha_docto,
               fecha_vencimiento,
-              c_invoice_id
+              c_invoice_id,
+              docto_adempiere
             FROM cgc_deudas_reales
             WHERE identificador_cliente = ?
               AND saldo_pendiente > 0
-            ORDER BY fecha_docto DESC, c_invoice_id DESC
+            ORDER BY fecha_docto DESC, contrato DESC
           `,
         )
         .bind(rut)
@@ -186,7 +189,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
           saldo_pendiente: number | null;
           fecha_docto: string | null;
           fecha_vencimiento: string | null;
-          c_invoice_id: number;
+          docto_adempiere: string | null;
         }>();
 
       const filtered = filterItems(rows.results);
@@ -208,11 +211,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
               saldo_pendiente,
               fecha_docto,
               fecha_vencimiento,
-              c_invoice_id
+              c_invoice_id,
+              docto_adempiere
             FROM cgc_deudas_reales
             WHERE LOWER(email) = ?
               AND saldo_pendiente > 0
-            ORDER BY fecha_docto DESC, c_invoice_id DESC
+            ORDER BY fecha_docto DESC, contrato DESC
           `,
         )
         .bind(email)
@@ -222,7 +226,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
           saldo_pendiente: number | null;
           fecha_docto: string | null;
           fecha_vencimiento: string | null;
-          c_invoice_id: number;
+          docto_adempiere: string | null;
         }>();
 
       const filtered = filterItems(rows.results);

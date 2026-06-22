@@ -23,6 +23,7 @@ type DebtItemRow = {
   fecha_vencimiento: string | null;
   identificador_cliente: string | null;
   monto: number | null;
+  docto_adempiere: string | null;
 };
 
 const json = (body: unknown, status = 200) =>
@@ -94,7 +95,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   try {
-    let payload: { rut?: unknown; email?: unknown; c_invoice_id?: unknown; docto_adempiere?: unknown };
+    let payload: { rut?: unknown; email?: unknown; contrato?: unknown; docto_adempiere?: unknown };
 
     try {
       payload = await request.json();
@@ -104,7 +105,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
     let rut: string | null = null;
     let email: string | null = null;
-    let cInvoiceId: string | null = null;
+    let contratoPayload: string | null = null;
+    let doctoAdempierePayload: string | null = null;
     if ('rut' in payload && typeof payload.rut === 'string') {
       const normalized = normalizeRut(payload.rut);
       if (!normalized) {
@@ -121,8 +123,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
       return json({ error: 'datos_insuficientes', status: 400 }, 400);
     }
 
-    if ('c_invoice_id' in payload && typeof payload.c_invoice_id === 'string') {
-      cInvoiceId = payload.c_invoice_id.trim() || null;
+    if ('contrato' in payload && typeof payload.contrato === 'string') {
+      contratoPayload = payload.contrato.trim() || null;
+    }
+    if ('docto_adempiere' in payload && typeof payload.docto_adempiere === 'string') {
+      doctoAdempierePayload = payload.docto_adempiere.trim() || null;
     }
 
     let debt: DebtRow | null = null;
@@ -135,7 +140,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
             MAX(c_invoice_id) AS c_invoice_id,
             MAX(contrato) AS contrato,
             MAX(contrato) AS copesaplan,
-            MAX(fecha_docto) AS docto_adempiere,
+            MAX(docto_adempiere) AS docto_adempiere,
             MAX(nombre_cliente) AS nombre,
             MAX(email) AS email,
             MAX(identificador_cliente) AS identificador_cliente,
@@ -158,7 +163,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
             fecha_docto,
             fecha_vencimiento,
             identificador_cliente,
-            saldo_pendiente AS monto
+            saldo_pendiente AS monto,
+            docto_adempiere
           FROM cgc_deudas_reales
           WHERE identificador_cliente = ?
             AND saldo_pendiente > 0
@@ -174,7 +180,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
             MAX(c_invoice_id) AS c_invoice_id,
             MAX(contrato) AS contrato,
             MAX(contrato) AS copesaplan,
-            MAX(fecha_docto) AS docto_adempiere,
+            MAX(docto_adempiere) AS docto_adempiere,
             MAX(nombre_cliente) AS nombre,
             MAX(email) AS email,
             MAX(identificador_cliente) AS identificador_cliente,
@@ -197,7 +203,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
             fecha_docto,
             fecha_vencimiento,
             identificador_cliente,
-            saldo_pendiente AS monto
+            saldo_pendiente AS monto,
+            docto_adempiere
           FROM cgc_deudas_reales
           WHERE LOWER(email) = ?
             AND saldo_pendiente > 0
@@ -217,6 +224,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
       return json({ error: 'deuda_no_encontrada', status: 404 }, 404);
     }
 
+    const contratos = Array.from(new Set(payableDebtItems.map((item) => item.contrato).filter(Boolean)));
+    const contratoFallback = contratos.length > 0 ? contratos.join(', ') : null;
+    const resolvedContrato = contratoPayload ?? contratoFallback ?? debt.contrato ?? '';
+
+    const adempieres = payableDebtItems.map((item) => item.docto_adempiere || item.contrato).filter(Boolean);
+    const doctoAdempiereFallback = adempieres.length > 0 ? adempieres.join(', ') : null;
+    const resolvedDoctoAdempiere = doctoAdempierePayload ?? doctoAdempiereFallback ?? debt.docto_adempiere ?? '';
+
     const externalReference = crypto.randomUUID();
     const origin = new URL(request.url).origin;
     const notificationUrl = `${origin}/api/mercadopago/webhook`;
@@ -225,14 +240,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const usesSandboxCheckout = usesTestAccessToken || env.MP_FORCE_SANDBOX === 'true';
     const payerEmail = debt.email?.trim() || undefined;
     const productName = 'Producto Copesa';
-    const documentNumber = cInvoiceId ?? debt.c_invoice_id ?? '';
+    const documentNumber = resolvedContrato;
     const documentLabel = documentNumber || null;
-    const checkoutItemTitle = documentNumber ? `Documento ${documentNumber}` : productName;
+    const isMultiple = documentNumber.includes(',');
+    const checkoutItemTitle = documentNumber
+      ? `${isMultiple ? 'Documentos' : 'Documento'} ${documentNumber}`
+      : productName;
     const items = usesSandboxCheckout
       ? [
           {
             currency_id: 'CLP',
-            description: `Prueba sandbox documento ${documentNumber}`,
+            description: `Prueba sandbox ${isMultiple ? 'documentos' : 'documento'} ${documentNumber}`,
             id: documentNumber || 'test-20',
             quantity: 1,
             title: checkoutItemTitle,
@@ -242,7 +260,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       : [
           {
             currency_id: 'CLP',
-            description: `Pago de documento ${documentNumber} - ${productName}`,
+            description: `Pago de ${isMultiple ? 'documentos' : 'documento'} ${documentNumber} - ${productName}`,
             id: documentNumber,
             quantity: 1,
             title: checkoutItemTitle,
@@ -260,11 +278,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
       external_reference: externalReference,
       items,
       metadata: {
-        contrato: debt.contrato,
+        contrato: resolvedContrato,
         copesaplan: null,
         regla_de_pago: null,
-        c_invoice_id: documentLabel,
-        docto_adempiere: documentLabel,
+        docto_adempiere: resolvedDoctoAdempiere || documentLabel,
         rut: debt.identificador_cliente ?? rut,
       },
       notification_url: notificationUrl,
@@ -303,7 +320,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         .bind(
           externalReference,
           debt.identificador_cliente ?? rut,
-          debt.contrato,
+          resolvedContrato,
           null,
           debt.nombre,
           debt.email,
@@ -311,8 +328,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
           'preference_creating',
           externalReference,
           JSON.stringify(preferenceBody),
-          documentLabel,
-          documentLabel,
+          null,
+          resolvedDoctoAdempiere || documentLabel,
         )
         .run();
     } catch (error) {
@@ -394,6 +411,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return json({
       init_point: initPoint,
       transaction_id: externalReference,
+      docto_adempiere: resolvedDoctoAdempiere || documentLabel,
     });
   } catch (error) {
     console.error('crear_pago_unhandled_error', error);

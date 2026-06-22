@@ -17,7 +17,7 @@ type MercadoPagoPayment = {
 
 type PaymentTransaction = {
   amount: number | null;
-  c_invoice_id: string | null;
+  contrato: string | null;
   copesaplan: string | null;
   docto_adempiere: string | null;
   email: string | null;
@@ -194,7 +194,9 @@ async function findTransaction(
   const transactionSelect = `
     SELECT
       amount,
+      contrato,
       copesaplan,
+      docto_adempiere,
       email,
       external_reference,
       mp_payment_id,
@@ -238,13 +240,13 @@ async function findTransaction(
   return null;
 }
 
-function extractInvoiceId(transaction: PaymentTransaction | null) {
+function extractContrato(transaction: PaymentTransaction | null) {
   if (!transaction) {
     return null;
   }
 
-  if (transaction.c_invoice_id) {
-    return transaction.c_invoice_id;
+  if (transaction.contrato) {
+    return transaction.contrato;
   }
 
   const source = transaction.raw_preference_response ?? transaction.raw_payment_response ?? null;
@@ -253,21 +255,54 @@ function extractInvoiceId(transaction: PaymentTransaction | null) {
   }
 
   try {
-    const parsed = JSON.parse(source) as { metadata?: { c_invoice_id?: unknown } };
-    const value = parsed.metadata?.c_invoice_id;
+    const parsed = JSON.parse(source) as { metadata?: { contrato?: unknown } };
+    const value = parsed.metadata?.contrato;
     return typeof value === 'string' && value.trim() ? value.trim() : null;
   } catch {
     return null;
   }
 }
 
-function extractInvoiceIdFromPayment(payment: MercadoPagoPayment | null) {
+function extractContratoFromPayment(payment: MercadoPagoPayment | null) {
   if (!payment) {
     return null;
   }
 
-  const metadata = (payment as MercadoPagoPayment & { metadata?: { c_invoice_id?: unknown } }).metadata;
-  const value = metadata?.c_invoice_id;
+  const metadata = (payment as MercadoPagoPayment & { metadata?: { contrato?: unknown } }).metadata;
+  const value = metadata?.contrato;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function extractDoctoAdempiere(transaction: PaymentTransaction | null) {
+  if (!transaction) {
+    return null;
+  }
+
+  if (transaction.docto_adempiere) {
+    return transaction.docto_adempiere;
+  }
+
+  const source = transaction.raw_preference_response ?? transaction.raw_payment_response ?? null;
+  if (!source) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(source) as { metadata?: { docto_adempiere?: unknown } };
+    const value = parsed.metadata?.docto_adempiere;
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractDoctoAdempiereFromPayment(payment: MercadoPagoPayment | null) {
+  if (!payment) {
+    return null;
+  }
+
+  const metadata = (payment as MercadoPagoPayment & { metadata?: { docto_adempiere?: unknown } }).metadata;
+  const value = metadata?.docto_adempiere;
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
@@ -293,7 +328,7 @@ const summary = {
   payment_method_id: payment?.payment_method_id ?? transactionPayment?.payment_method_id ?? null,
   payment_type: payment?.payment_type_id ?? transactionPayment?.payment_type_id ?? paymentType,
   producto: transaction?.copesaplan ?? null,
-  c_invoice_id: transaction?.c_invoice_id ?? null,
+  contrato: transaction?.contrato ?? null,
   docto_adempiere: transaction?.docto_adempiere ?? null,
   rut: transaction?.rut ?? null,
   status: payment?.status ?? transactionPayment?.status ?? status,
@@ -301,7 +336,9 @@ const summary = {
   transaction_found: Boolean(transaction),
   db_lookup_error: dbLookupError,
 };
-summary.c_invoice_id = extractInvoiceId(transaction) ?? extractInvoiceIdFromPayment(payment);
+summary.contrato = transaction?.contrato ?? extractContrato(transaction) ?? extractContratoFromPayment(payment);
+summary.docto_adempiere = transaction?.docto_adempiere ?? extractDoctoAdempiere(transaction) ?? extractDoctoAdempiereFromPayment(payment);
+const displayDocuments = summary.docto_adempiere || summary.contrato;
 ---
 
 <!doctype html>
@@ -326,10 +363,14 @@ summary.c_invoice_id = extractInvoiceId(transaction) ?? extractInvoiceIdFromPaym
           )
         }
         {
-          summary.c_invoice_id && (
+          displayDocuments && (
             <div class="mt-4 rounded-md border border-slate-200 bg-white p-4">
-              <p class="text-xs font-bold uppercase text-slate-500">Número de documento</p>
-              <p class="mt-1 text-lg font-semibold text-slate-950">{summary.c_invoice_id}</p>
+              <p class="text-xs font-bold uppercase text-slate-500">
+                {displayDocuments.includes(',') ? 'Números de documento' : 'Número de documento'}
+              </p>
+              {displayDocuments.split(',').map((id) => (
+                <p class="mt-1 text-lg font-semibold text-slate-950">{id.trim()}</p>
+              ))}
             </div>
           )
         }

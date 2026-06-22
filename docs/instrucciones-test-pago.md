@@ -24,26 +24,26 @@ Para simular un pago **aprobado** con éxito:
 
 ---
 
-## 📊 3. Validación en Base de Datos D1 (c_order_adempiere)
-El worker productivo está configurado mediante `wrangler.toml` para usar la base de datos `c_order_adempiere`. Puedes ejecutar las siguientes consultas mediante Wrangler CLI en la terminal:
+## 📊 3. Validación en Base de Datos D1 (cobranza)
+El worker productivo está configurado mediante `wrangler.toml` para usar la base de datos `cobranza`. Puedes ejecutar las siguientes consultas mediante Wrangler CLI en la terminal:
 
 ### A. Verificar Transacciones en `mp_payment_transactions`
 Esta tabla registra la intención de pago inicial (`status = preference_creating` o `preference_created`) y se actualiza a `approved` cuando el webhook procesa la confirmación del pago.
 
 ```bash
-npx wrangler d1 execute c_order_adempiere --remote --command "SELECT id, status, amount, created_at, external_reference FROM mp_payment_transactions ORDER BY created_at DESC LIMIT 5"
+npx wrangler d1 execute cobranza --remote --command "SELECT id, status, amount, created_at, external_reference FROM mp_payment_transactions ORDER BY created_at DESC LIMIT 5"
 ```
 
 ### B. Verificar Eventos del Webhook en `mp_payment_events`
 Esta tabla registra las notificaciones directas recibidas por la pasarela de pago.
 
 ```bash
-npx wrangler d1 execute c_order_adempiere --remote --command "SELECT id, mp_payment_id, event_type, action, signature_valid, created_at FROM mp_payment_events ORDER BY created_at DESC LIMIT 5"
+npx wrangler d1 execute cobranza --remote --command "SELECT id, mp_payment_id, event_type, action, signature_valid, created_at FROM mp_payment_events ORDER BY created_at DESC LIMIT 5"
 ```
 
 ### C. Verificar Pagos Registrados en `pagos`
 Esta tabla recopila el log consolidado de confirmaciones de pago exitosas (tanto por retorno del usuario en `resultado.astro` como por webhook).
 
 ```bash
-npx wrangler d1 execute c_order_adempiere --remote --command "SELECT id, status, status_detail, transaction_amount, external_reference, created_at FROM pagos ORDER BY created_at DESC LIMIT 5"
+npx wrangler d1 execute cobranza --remote --command "SELECT id, status, status_detail, transaction_amount, external_reference, created_at FROM pagos ORDER BY created_at DESC LIMIT 5"
 ```
