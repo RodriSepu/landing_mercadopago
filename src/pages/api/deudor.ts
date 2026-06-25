@@ -131,7 +131,7 @@ const filterItems = (rows: Array<{
       dias_desde_compromiso: diasDesdeCompromiso,
     };
 
-    if (diasDesdeCompromiso !== null && diasDesdeCompromiso >= 10) {
+    if (diasDesdeCompromiso !== null && diasDesdeCompromiso >= 20) {
       cobrables.push(item);
     } else {
       gestion.push(item);
@@ -178,7 +178,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return json({ error: 'datos_insuficientes' }, 400);
   }
 
-  const db = await getDatabase(locals);
+  const db = (await getDatabase(locals)) as any;
 
   if (!db) {
     return json({ error: 'db_no_configurada' }, 503);
@@ -190,7 +190,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   try {
     if (rut) {
-      const rows = await db
+      const rows = (await db
         .prepare(
           `
           SELECT
@@ -208,14 +208,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
           `,
         )
         .bind(rut)
-        .all<{
-          contrato: string | null;
-          nombre_cliente: string | null;
-          saldo_pendiente: number | null;
-          fecha_docto: string | null;
-          fecha_vencimiento: string | null;
-          docto_adempiere: string | null;
-        }>();
+        .all()) as {
+          results: Array<{
+            contrato: string | null;
+            nombre_cliente: string | null;
+            saldo_pendiente: number | null;
+            fecha_docto: string | null;
+            fecha_vencimiento: string | null;
+            docto_adempiere: string | null;
+          }>;
+        };
 
       const filtered = filterItems(rows.results);
       items = filtered.cobrables;
@@ -227,7 +229,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         monto: items.reduce((sum, item) => sum + item.monto, 0),
       };
     } else if (email) {
-      const rows = await db
+      const rows = (await db
         .prepare(
           `
           SELECT
@@ -245,14 +247,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
           `,
         )
         .bind(email)
-        .all<{
-          contrato: string | null;
-          nombre_cliente: string | null;
-          saldo_pendiente: number | null;
-          fecha_docto: string | null;
-          fecha_vencimiento: string | null;
-          docto_adempiere: string | null;
-        }>();
+        .all()) as {
+          results: Array<{
+            contrato: string | null;
+            nombre_cliente: string | null;
+            saldo_pendiente: number | null;
+            fecha_docto: string | null;
+            fecha_vencimiento: string | null;
+            docto_adempiere: string | null;
+          }>;
+        };
 
       const filtered = filterItems(rows.results);
       items = filtered.cobrables;

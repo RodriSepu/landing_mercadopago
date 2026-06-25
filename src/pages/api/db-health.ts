@@ -16,14 +16,14 @@ const json = (body: unknown, status = 200) =>
 export const prerender = false;
 
 export const GET: APIRoute = async ({ locals }) => {
-  const db = await getDatabase(locals);
+  const db = (await getDatabase(locals)) as any;
 
   if (!db) {
     return json({ ok: false, error: 'db_no_configurada' }, 503);
   }
 
   try {
-    const table = await db
+    const table = (await db
       .prepare(
         `
           SELECT name
@@ -33,11 +33,11 @@ export const GET: APIRoute = async ({ locals }) => {
           ORDER BY name
         `,
       )
-      .all<{ name: string }>();
+      .all()) as { results: { name: string }[] };
 
     return json({
       ok: true,
-      tables: table.results.map((row) => row.name),
+      tables: table.results.map((row: any) => row.name),
     });
   } catch (error) {
     return json(

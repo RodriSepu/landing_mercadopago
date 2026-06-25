@@ -98,7 +98,7 @@ const getPayableDebtItems = (rows: DebtItemRow[]) => {
       return false;
     }
 
-    return diasDesdeCompromiso >= 10;
+    return diasDesdeCompromiso >= 20;
   });
 };
 

@@ -226,10 +226,10 @@ export async function initSandboxDatabase() {
           const exportData = JSON.parse(fs.readFileSync(exportPath, 'utf-8'));
           let records = exportData[0]?.results ?? [];
           if (records.length > 0) {
-            // Filter out Ignacio's original record
-            records = records.filter((r: any) => r.rut_contratante !== "15825969-9");
+            // Filter out Ignacio's and Alegria's original records
+            records = records.filter((r: any) => r.rut_contratante !== "15825969-9" && r.rut_contratante !== "16745326-0");
 
-            // Push three custom documents for Ignacio
+            // Push custom documents for Ignacio and Alegria
             records.push(
               {
                 org_name: "COMERCIALIZADORA GC SA",
@@ -292,6 +292,48 @@ export async function initSandboxDatabase() {
                 saldo_pendiente: 16990,
                 estado_cobranza: "ENVIADO",
                 fecha_estado_cobranza: "2026-06-23T00:00:00",
+                created_at: "2026-06-25T07:05:08.286105"
+              },
+              {
+                org_name: "COMERCIALIZADORA GC SA",
+                c_invoice_id: "5307607",
+                contrato: "5307444",
+                termino_de_pago: "MERCADOPAGO",
+                estado_documento: "CO",
+                rut_contratante: "16745326-0",
+                nombre: "IGNACIO ALEGRIA",
+                email: "cliente@correo.cl",
+                deuda_pendiente: 16990,
+                docto_adempiere: "24537898",
+                fecha_docto: "2026-05-07",
+                fecha_vencimiento: "2026-05-07",
+                telefono: "+56978885954",
+                monto_neto: 14277,
+                monto_total: 16990,
+                saldo_pendiente: 16990,
+                estado_cobranza: "ENVIADO",
+                fecha_estado_cobranza: "2026-05-06T00:00:00",
+                created_at: "2026-06-25T07:05:08.286105"
+              },
+              {
+                org_name: "COMERCIALIZADORA GC SA",
+                c_invoice_id: "5307608",
+                contrato: "5307444",
+                termino_de_pago: "MERCADOPAGO",
+                estado_documento: "CO",
+                rut_contratante: "16745326-0",
+                nombre: "IGNACIO ALEGRIA",
+                email: "cliente@correo.cl",
+                deuda_pendiente: 16990,
+                docto_adempiere: "24571422",
+                fecha_docto: "2026-06-07",
+                fecha_vencimiento: "2026-06-07",
+                telefono: "+56978885954",
+                monto_neto: 14277,
+                monto_total: 16990,
+                saldo_pendiente: 16990,
+                estado_cobranza: "ENVIADO",
+                fecha_estado_cobranza: "2026-06-06T00:00:00",
                 created_at: "2026-06-25T07:05:08.286105"
               }
             );

@@ -13,6 +13,13 @@ type MercadoPagoPayment = {
   status?: string;
   status_detail?: string;
   transaction_amount?: number;
+  currency_id?: string;
+  authorization_code?: string;
+  date_approved?: string;
+  date_created?: string;
+  card?: {
+    last_four_digits?: string;
+  };
 };
 
 type PaymentTransaction = {
@@ -42,6 +49,7 @@ const queryParams = Array.from(Astro.url.searchParams.entries());
 let payment: MercadoPagoPayment | null = null;
 let transaction: PaymentTransaction | null = null;
 let dbLookupError: string | null = null;
+let details: any[] = [];
 
 const titleByStatus: Record<string, string> = {
   approved: 'Pago recibido',
@@ -164,6 +172,56 @@ try {
         payment ? JSON.stringify(payment) : null,
       )
       .run();
+
+    const finalContrato = transaction?.contrato ?? extractContrato(transaction) ?? extractContratoFromPayment(payment);
+    const finalDoctoAdempiere = transaction?.docto_adempiere ?? extractDoctoAdempiere(transaction) ?? extractDoctoAdempiereFromPayment(payment);
+
+    const docIds = (finalDoctoAdempiere ?? '')
+      .split(',')
+      .map((id: string) => id.trim())
+      .filter(Boolean);
+
+    if (docIds.length > 0) {
+      try {
+        const placeholders = docIds.map(() => '?').join(',');
+        const query = `
+          SELECT contrato, c_invoice_id, docto_adempiere, folio_legal, fecha_docto, saldo_pendiente
+          FROM cgc_deudas_reales
+          WHERE docto_adempiere IN (${placeholders}) OR contrato IN (${placeholders})
+        `;
+        const binds = [...docIds, ...docIds];
+        const detailsRows = await env.DB.prepare(query).bind(...binds).all<{
+          contrato: string | null;
+          c_invoice_id: number | null;
+          docto_adempiere: string | null;
+          folio_legal: string | null;
+          fecha_docto: string | null;
+          saldo_pendiente: number | null;
+        }>();
+
+        details = detailsRows.results.map((row) => ({
+          contrato: row.contrato,
+          orderid: row.c_invoice_id ? String(row.c_invoice_id) : null,
+          docto_adm: row.docto_adempiere,
+          folio_docto_sii: row.folio_legal ?? null,
+          fecha_docto_adm: row.fecha_docto,
+          monto_pendiente: row.saldo_pendiente ?? 0,
+        }));
+      } catch (e) {
+        console.error("Error querying details from cgc_deudas_reales", e);
+      }
+    }
+
+    if (details.length === 0 && docIds.length > 0) {
+      details = docIds.map((id) => ({
+        contrato: finalContrato ?? '',
+        orderid: null,
+        docto_adm: id,
+        folio_docto_sii: null,
+        fecha_docto_adm: null,
+        monto_pendiente: typeof paidAmount === 'number' ? Math.round(paidAmount / docIds.length) : 0,
+      }));
+    }
   }
 } catch (error) {
   dbLookupError = error instanceof Error ? error.message : 'error_desconocido';
@@ -320,27 +378,36 @@ const transactionPayment =
     : null;
 const displayAmount =
   payment?.transaction_amount ?? transactionPayment?.transaction_amount ?? transaction?.amount ?? null;
+
+const resolvedContrato = transaction?.contrato ?? extractContrato(transaction) ?? extractContratoFromPayment(payment);
+const resolvedDoctoAdempiere = transaction?.docto_adempiere ?? extractDoctoAdempiere(transaction) ?? extractDoctoAdempiereFromPayment(payment);
+const displayDocuments = resolvedDoctoAdempiere || resolvedContrato;
+
 const summary = {
-  amount: displayAmount,
-  amount_formatted: typeof displayAmount === 'number' ? currency.format(displayAmount) : null,
-  external_reference:
-    payment?.external_reference ?? transactionPayment?.external_reference ?? externalReference ?? transaction?.external_reference,
-  mp_payment_id: payment?.id ? String(payment.id) : transactionPayment?.id ? String(transactionPayment.id) : paymentId ?? transaction?.mp_payment_id,
-  mp_preference_id: preferenceId ?? transaction?.mp_preference_id,
-  payment_method_id: payment?.payment_method_id ?? transactionPayment?.payment_method_id ?? null,
-  payment_type: payment?.payment_type_id ?? transactionPayment?.payment_type_id ?? paymentType,
-  producto: transaction?.copesaplan ?? null,
-  contrato: transaction?.contrato ?? null,
-  docto_adempiere: transaction?.docto_adempiere ?? null,
-  rut: transaction?.rut ?? null,
-  status: payment?.status ?? transactionPayment?.status ?? status,
-  status_detail: payment?.status_detail ?? transactionPayment?.status_detail ?? null,
-  transaction_found: Boolean(transaction),
-  db_lookup_error: dbLookupError,
+  customer: {
+    rut: transaction?.rut ?? (payment as any)?.metadata?.rut ?? null,
+    email: transaction?.email ?? (payment as any)?.payer?.email ?? null,
+    name: transaction?.nombre ?? (payment as any)?.payer?.name ?? null,
+  },
+  payment: {
+    provider: "external_mercado_pago",
+    provider_payment_id: payment?.id ? String(payment.id) : (transactionPayment?.id ? String(transactionPayment.id) : (paymentId ?? transaction?.mp_payment_id ?? null)),
+    status: payment?.status ?? transactionPayment?.status ?? status ?? null,
+    amount: displayAmount,
+    currency: payment?.currency_id ?? transactionPayment?.currency_id ?? "CLP",
+    authorization_code: payment?.authorization_code ?? transactionPayment?.authorization_code ?? null,
+    external_reference: payment?.external_reference ?? transactionPayment?.external_reference ?? externalReference ?? transaction?.external_reference ?? null,
+    payment_method_id: payment?.payment_method_id ?? transactionPayment?.payment_method_id ?? null,
+    last_four_digits: payment?.card?.last_four_digits ?? transactionPayment?.card?.last_four_digits ?? null,
+    paid_at: payment?.date_approved ?? payment?.date_created ?? transactionPayment?.date_approved ?? transactionPayment?.date_created ?? null,
+    provider_response: {
+      id: payment?.id ? String(payment.id) : (transactionPayment?.id ? String(transactionPayment.id) : (paymentId ?? transaction?.mp_payment_id ?? null)),
+      status: payment?.status ?? transactionPayment?.status ?? status ?? null,
+      status_detail: payment?.status_detail ?? transactionPayment?.status_detail ?? null,
+    }
+  },
+  details: details
 };
-summary.contrato = transaction?.contrato ?? extractContrato(transaction) ?? extractContratoFromPayment(payment);
-summary.docto_adempiere = transaction?.docto_adempiere ?? extractDoctoAdempiere(transaction) ?? extractDoctoAdempiereFromPayment(payment);
-const displayDocuments = summary.docto_adempiere || summary.contrato;
 ---
 
 <!doctype html>
