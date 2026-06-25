@@ -67,19 +67,46 @@ const isValidRut = (rut: string) => {
   return expectedDigit === checkDigit;
 };
 
-const parseDateOnly = (value: string | null) => {
-  if (!value) {
-    return null;
-  }
-
-  const normalized = value.includes('T') ? value : `${value}T00:00:00`;
-  const parsed = new Date(normalized);
-
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+const getChileDateParts = (date: Date) => {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Santiago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
+  return {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+  };
 };
 
-const diffInDays = (from: Date, to: Date) =>
-  Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+const parseDateParts = (value: string | null) => {
+  if (!value) return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+};
+
+const getDaysSinceCompromiso = (compromisoStr: string | null, todayDate: Date = new Date()) => {
+  const compParts = parseDateParts(compromisoStr);
+  if (!compParts) return null;
+
+  const todayParts = getChileDateParts(todayDate);
+
+  const compUtc = Date.UTC(compParts.year, compParts.month - 1, compParts.day);
+  const todayUtc = Date.UTC(todayParts.year, todayParts.month - 1, todayParts.day);
+
+  return Math.floor((todayUtc - compUtc) / (1000 * 60 * 60 * 24));
+};
 
 const filterItems = (rows: Array<{
   contrato: string | null;
@@ -94,9 +121,7 @@ const filterItems = (rows: Array<{
   const gestion: DeudorResponseItem[] = [];
 
   for (const row of rows) {
-    const compromiso = parseDateOnly(row.fecha_docto);
-    const diasDesdeCompromiso =
-      compromiso ? diffInDays(compromiso, today) : null;
+    const diasDesdeCompromiso = getDaysSinceCompromiso(row.fecha_docto, today);
     const item = {
       contrato: row.contrato,
       docto_adempiere: row.docto_adempiere,
@@ -106,7 +131,7 @@ const filterItems = (rows: Array<{
       dias_desde_compromiso: diasDesdeCompromiso,
     };
 
-    if (diasDesdeCompromiso !== null && diasDesdeCompromiso > 20) {
+    if (diasDesdeCompromiso !== null && diasDesdeCompromiso >= 10) {
       cobrables.push(item);
     } else {
       gestion.push(item);
@@ -259,7 +284,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 const getDatabase = async (locals: App.Locals) => {
   if (import.meta.env.ASTRO_SANDBOX) {
-    return (locals.runtime?.env ?? (globalThis as any).process?.env).DB as D1Database | undefined;
+    const { initSandboxDatabase } = await import('../../lib/db-sandbox');
+    return initSandboxDatabase();
   }
 
   try {

@@ -53,7 +53,8 @@ export const GET: APIRoute = async ({ locals }) => {
 
 const getDatabase = async (locals: App.Locals) => {
   if (import.meta.env.ASTRO_SANDBOX) {
-    return (locals.runtime?.env ?? (globalThis as any).process?.env).DB as D1Database | undefined;
+    const { initSandboxDatabase } = await import('../../lib/db-sandbox');
+    return initSandboxDatabase();
   }
 
   try {

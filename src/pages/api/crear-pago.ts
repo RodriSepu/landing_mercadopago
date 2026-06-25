@@ -48,30 +48,57 @@ const normalizeRut = (rut: string) => {
   return `${match[1]}-${match[2]}`;
 };
 
-const parseDateOnly = (value: string | null) => {
-  if (!value) {
-    return null;
-  }
-
-  const normalized = value.includes('T') ? value : `${value}T00:00:00`;
-  const parsed = new Date(normalized);
-
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+const getChileDateParts = (date: Date) => {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Santiago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
+  return {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+  };
 };
 
-const diffInDays = (from: Date, to: Date) =>
-  Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+const parseDateParts = (value: string | null) => {
+  if (!value) return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+};
+
+const getDaysSinceCompromiso = (compromisoStr: string | null, todayDate: Date = new Date()) => {
+  const compParts = parseDateParts(compromisoStr);
+  if (!compParts) return null;
+
+  const todayParts = getChileDateParts(todayDate);
+
+  const compUtc = Date.UTC(compParts.year, compParts.month - 1, compParts.day);
+  const todayUtc = Date.UTC(todayParts.year, todayParts.month - 1, todayParts.day);
+
+  return Math.floor((todayUtc - compUtc) / (1000 * 60 * 60 * 24));
+};
 
 const getPayableDebtItems = (rows: DebtItemRow[]) => {
   const today = new Date();
 
   return rows.filter((row) => {
-    const compromiso = parseDateOnly(row.fecha_docto);
-    if (!compromiso) {
+    const diasDesdeCompromiso = getDaysSinceCompromiso(row.fecha_docto, today);
+    if (diasDesdeCompromiso === null) {
       return false;
     }
 
-    return diffInDays(compromiso, today) > 20;
+    return diasDesdeCompromiso >= 10;
   });
 };
 
@@ -240,7 +267,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const usesSandboxCheckout = usesTestAccessToken || env.MP_FORCE_SANDBOX === 'true';
     const payerEmail = debt.email?.trim() || undefined;
     const productName = 'Producto Copesa';
-    const documentNumber = resolvedContrato;
+    const documentNumber = resolvedDoctoAdempiere || resolvedContrato;
     const documentLabel = documentNumber || null;
     const isMultiple = documentNumber.includes(',');
     const checkoutItemTitle = documentNumber
@@ -336,50 +363,60 @@ export const POST: APIRoute = async ({ request, locals }) => {
       console.error('mp_payment_transactions_insert_failed', error);
     }
 
-    let mpResponse: Response;
+    let preference: Record<string, unknown>;
 
-    try {
-      mpResponse = await fetch('https://api.mercadopago.com/checkout/preferences', {
-        body: JSON.stringify(preferenceBody),
-        headers: {
-          Authorization: `Bearer ${env.MP_ACCESS_TOKEN}`,
-          'Content-Type': 'application/json',
-          'X-Idempotency-Key': idempotencyKey,
-        },
-        method: 'POST',
-      });
-    } catch (error) {
-      await env.DB.prepare(
-        `
-          UPDATE mp_payment_transactions
-          SET status = 'preference_failed',
-              raw_preference_response = ?,
-              updated_at = datetime('now')
-          WHERE external_reference = ?
-        `,
-      )
-        .bind(JSON.stringify({ error: 'fetch_exception', message: error instanceof Error ? error.message : 'unknown' }), externalReference)
-        .run();
+    if (import.meta.env.ASTRO_SANDBOX) {
+      preference = {
+        id: `mock-pref-${crypto.randomUUID()}`,
+        sandbox_init_point: `${origin}/pago/resultado?status=success&preference_id=mock-pref&ref=${externalReference}`,
+        init_point: `${origin}/pago/resultado?status=success&preference_id=mock-pref&ref=${externalReference}`,
+      };
+    } else {
+      let mpResponse: Response;
 
-      return json({ error: 'mercado_pago_error', status: 502 }, 502);
-    }
+      try {
+        mpResponse = await fetch('https://api.mercadopago.com/checkout/preferences', {
+          body: JSON.stringify(preferenceBody),
+          headers: {
+            Authorization: `Bearer ${env.MP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+            'X-Idempotency-Key': idempotencyKey,
+          },
+          method: 'POST',
+        });
+      } catch (error) {
+        await env.DB.prepare(
+          `
+            UPDATE mp_payment_transactions
+            SET status = 'preference_failed',
+                raw_preference_response = ?,
+                updated_at = datetime('now')
+            WHERE external_reference = ?
+          `,
+        )
+          .bind(JSON.stringify({ error: 'fetch_exception', message: error instanceof Error ? error.message : 'unknown' }), externalReference)
+          .run();
 
-    const preference = (await mpResponse.json()) as Record<string, unknown>;
+        return json({ error: 'mercado_pago_error', status: 502 }, 502);
+      }
 
-    if (!mpResponse.ok) {
-      await env.DB.prepare(
-        `
-          UPDATE mp_payment_transactions
-          SET status = 'preference_failed',
-              raw_preference_response = ?,
-              updated_at = datetime('now')
-          WHERE external_reference = ?
-        `,
-      )
-        .bind(JSON.stringify(preference), externalReference)
-        .run();
+      preference = (await mpResponse.json()) as Record<string, unknown>;
 
-      return json({ error: 'mercado_pago_error', status: 502 }, 502);
+      if (!mpResponse.ok) {
+        await env.DB.prepare(
+          `
+            UPDATE mp_payment_transactions
+            SET status = 'preference_failed',
+                raw_preference_response = ?,
+                updated_at = datetime('now')
+            WHERE external_reference = ?
+          `,
+        )
+          .bind(JSON.stringify(preference), externalReference)
+          .run();
+
+        return json({ error: 'mercado_pago_error', status: 502 }, 502);
+      }
     }
 
     const initPoint = String(
@@ -421,7 +458,18 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 const getRuntime = async (locals: App.Locals) => {
   if (import.meta.env.ASTRO_SANDBOX) {
-    return { env: (locals.runtime?.env ?? (globalThis as any).process?.env) as unknown as Env };
+    const { initSandboxDatabase } = await import('../../lib/db-sandbox');
+    const db = await initSandboxDatabase();
+    return {
+      env: {
+        DB: db,
+        MP_ACCESS_TOKEN: 'TEST-MOCK-TOKEN',
+        MP_FORCE_SANDBOX: 'true',
+        MP_WEBHOOK_SECRET: 'test-secret',
+        BASIC_AUTH_USER: 'admin',
+        BASIC_AUTH_PASSWORD: 'password'
+      } as unknown as Env
+    };
   }
 
   const { env } = (await import(/* @vite-ignore */ 'cloudflare:workers')) as CloudflareWorkersModule;

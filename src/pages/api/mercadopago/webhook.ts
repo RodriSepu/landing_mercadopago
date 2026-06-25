@@ -248,7 +248,9 @@ const validateSignature = async ({
 
 const getRuntime = async (locals: App.Locals) => {
   if (import.meta.env.ASTRO_SANDBOX) {
-    return { env: (locals.runtime?.env ?? (globalThis as any).process?.env) as unknown as Env };
+    const { initSandboxDatabase } = await import('../../../lib/db-sandbox');
+    const db = await initSandboxDatabase();
+    return { env: { DB: db } as unknown as Env };
   }
 
   const { env } = (await import(/* @vite-ignore */ 'cloudflare:workers')) as CloudflareWorkersModule;

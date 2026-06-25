@@ -935,13 +935,15 @@ import "../styles/global.css";
                       icon.textContent = "calendar_today";
 
                       const textContainer = document.createElement("div");
-                      textContainer.className = "flex flex-col gap-0.5 text-left";
+                      textContainer.className =
+                        "flex flex-col gap-0.5 text-left";
 
                       const labelSpan = document.createElement("span");
                       labelSpan.textContent = "Fecha de compromiso de pago:";
 
                       const dateSpan = document.createElement("span");
-                      dateSpan.className = "font-bold text-[#1f2937]";
+                      dateSpan.className =
+                        "font-bold text-[#1f2937] text-center";
                       dateSpan.textContent = item.fecha_docto;
 
                       textContainer.appendChild(labelSpan);
@@ -978,38 +980,58 @@ import "../styles/global.css";
                 for (const item of gestionItems) {
                   const row = document.createElement("article");
                   row.className =
-                    "relative mt-[25px] rounded-2xl border border-dashed bg-white/50 p-4 pt-7 sm:p-5 sm:pt-7 shadow-none flex flex-col gap-3";
+                    "relative mt-[25px] rounded-2xl border border-dashed border-[#d1d5db]/70 bg-white/40 p-4 pt-6 pb-4 sm:p-5 sm:pt-6 sm:pb-4 shadow-none flex flex-col gap-3 backdrop-blur-[2px]";
 
                   const status = document.createElement("p");
                   status.className =
-                    "absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-[#d1d5db] bg-[#f8fafc] px-3 py-1 text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.05em] text-[#6b7280] whitespace-nowrap";
+                    "absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-[#d1d5db] bg-[#f8fafc] px-3 py-0.5 text-[8px] sm:text-[9px] font-bold uppercase tracking-[0.05em] text-[#6b7280] whitespace-nowrap";
                   status.textContent = "* Documento en proceso de cobro";
 
                   const topRow = document.createElement("div");
-                  topRow.className = "flex justify-between items-start w-full gap-4";
+                  topRow.className =
+                    "flex justify-between items-center w-full gap-4";
 
                   const left = document.createElement("div");
-                  left.className = "flex flex-col items-start";
+                  left.className = "flex flex-col items-start gap-1";
 
                   const invoiceLabel = document.createElement("p");
                   invoiceLabel.className =
-                    "mt-1 text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.05em] text-[#6b7280]";
+                    "text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.05em] text-[#8e939e]";
                   const docNum = item.docto_adempiere || item.contrato;
-                  invoiceLabel.innerHTML = `N° de documento: <span class="ml-1 text-sm sm:text-base font-medium text-[#a2a8b2] tracking-normal font-[system-ui]">${docNum}</span>`;
+                  invoiceLabel.innerHTML = `N° de documento: <span class="ml-1 text-xs sm:text-sm font-semibold text-[#8a91a0] tracking-normal font-[system-ui]">${docNum}</span>`;
                   left.appendChild(invoiceLabel);
+
+                  if (item.fecha_docto) {
+                    const dateRow = document.createElement("div");
+                    dateRow.className =
+                      "flex items-center gap-1.5 text-[9px] sm:text-[10px] font-semibold text-[#8e939e]";
+
+                    const icon = document.createElement("span");
+                    icon.className =
+                      "material-symbols-outlined text-[15px] text-[#8e939e] select-none mt-0.5";
+                    icon.textContent = "pending_actions";
+
+                    const text = document.createElement("span");
+                    text.innerHTML = `Fecha de compromiso: <span class="ml-1 font-bold text-[#8a91a0]">${item.fecha_docto}</span>`;
+
+                    dateRow.appendChild(icon);
+                    dateRow.appendChild(text);
+                    left.appendChild(dateRow);
+                  }
+
                   topRow.appendChild(left);
 
                   const right = document.createElement("div");
-                  right.className = "text-right flex flex-col items-end";
+                  right.className = "text-right flex flex-col items-end gap-0.5";
 
                   const amountLabel = document.createElement("p");
                   amountLabel.className =
-                    "text-[9px] sm:text-[10px] font-medium uppercase tracking-[0.08em] text-[#6b7280]";
+                    "text-[8px] sm:text-[9px] font-bold uppercase tracking-[0.08em] text-[#8e939e]";
                   amountLabel.textContent = "Monto deuda:";
 
                   const amountValue = document.createElement("p");
                   amountValue.className =
-                    "mt-1 font-[Manrope] text-xl sm:text-2xl font-semibold text-[#a2a8b2]";
+                    "font-[Manrope] text-base sm:text-lg font-bold text-[#8a91a0]";
                   amountValue.textContent = currency.format(item.monto);
 
                   right.appendChild(amountLabel);
@@ -1017,35 +1039,6 @@ import "../styles/global.css";
                   topRow.appendChild(right);
 
                   row.appendChild(topRow);
-
-                  if (item.fecha_docto) {
-                    const badge = document.createElement("div");
-                    badge.className =
-                      "mt-2 flex w-full items-start gap-1.5 rounded-lg bg-[#f3f4f6] px-2 py-1.5 text-[10px] sm:text-[11px] font-semibold text-[#6b7280]";
-
-                    const icon = document.createElement("span");
-                    icon.className =
-                      "material-symbols-outlined text-[16px] text-[#6b7280] select-none mt-0.5";
-                    icon.textContent = "pending_actions";
-
-                    const textContainer = document.createElement("div");
-                    textContainer.className = "flex flex-col gap-0.5 text-left";
-
-                    const labelSpan = document.createElement("span");
-                    labelSpan.textContent = "Fecha de compromiso de pago:";
-
-                    const dateSpan = document.createElement("span");
-                    dateSpan.className = "font-bold text-[#4b5563]";
-                    dateSpan.textContent = item.fecha_docto;
-
-                    textContainer.appendChild(labelSpan);
-                    textContainer.appendChild(dateSpan);
-
-                    badge.appendChild(icon);
-                    badge.appendChild(textContainer);
-                    row.appendChild(badge);
-                  }
-
                   row.appendChild(status);
                   debtBreakdown.appendChild(row);
                 }
@@ -1083,7 +1076,9 @@ import "../styles/global.css";
               }
               if (payButton instanceof HTMLButtonElement) {
                 payButton.dataset.contrato = Array.from(
-                  new Set(overdueItems.map((item) => item.contrato).filter(Boolean))
+                  new Set(
+                    overdueItems.map((item) => item.contrato).filter(Boolean),
+                  ),
                 ).join(", ");
                 payButton.dataset.doctoAdempiere = overdueItems
                   .map((item) => item.docto_adempiere || item.contrato)
@@ -1126,7 +1121,8 @@ import "../styles/global.css";
               : { email: payableEmail };
 
             const contrato = payButton.dataset.contrato || undefined;
-            const doctoAdempiere = payButton.dataset.doctoAdempiere || undefined;
+            const doctoAdempiere =
+              payButton.dataset.doctoAdempiere || undefined;
 
             try {
               const response = await fetch("/api/crear-pago", {
